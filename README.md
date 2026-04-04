@@ -1,4 +1,4 @@
-# Threads Collector
+# Threads Collector v3
 
 用 Telegram Bot 收藏 Threads 好文，自動存入 Google Sheet，並由 Claude AI 自動分析分類。
 
@@ -7,10 +7,11 @@
 ## 功能
 
 - 傳 Threads 連結給 Bot → 自動存入 Google Sheet
-- 自動抓取：日期、來源帳號、文案、媒體類型
+- **Apify 自動抓取**：文案、來源帳號、媒體類型、愛心數、留言數
 - Claude AI 自動分析：主題標籤、風格分類、AI摘要
-- 支援手動附加關鍵字和數據
-- 兩支手機同一帳號都能用
+- 支援手動附加關鍵字和轉發/分享數據
+- **設定頁架構**：改 Token/Key 只需改 Google Sheet，不需動程式碼
+- **每日健康檢查**：Bot 掛掉時自動通知
 
 ---
 
@@ -22,7 +23,8 @@ iPhone Telegram App
 Telegram Bot
     ↓ Webhook
 Google Apps Script（免費雲端）
-    ↓ 自動抓取資料 + 呼叫 Claude API
+    ↓ 呼叫 Apify 抓取文案 + 互動數
+    ↓ 呼叫 Claude API 分析
 Google Sheet（14欄）
 ```
 
@@ -35,6 +37,7 @@ Google Sheet（14欄）
 | Telegram 帳號 | 傳訊息的介面 | 免費 |
 | Google 帳號 | Google Sheet + Apps Script | 免費 |
 | Claude API Key | AI 分析用 | 有免費額度 |
+| Apify Token | 自動抓取 Threads 文案 | 免費額度每月 $5 |
 
 ---
 
@@ -42,14 +45,14 @@ Google Sheet（14欄）
 
 | 欄 | 名稱 | 來源 |
 |----|------|------|
-| A | 日期 | 自動 |
+| A | 時間 | 自動 |
 | B | 連結 | 自動（已去除追蹤參數） |
-| C | 來源帳號 | 自動（從 URL 解析） |
-| D | 文案 | 自動（爬取頁面內容） |
-| E | 媒體類型 | 自動（圖片/影片/純文字） |
+| C | 帳號 | 自動（從 URL 解析） |
+| D | 文案 | Apify 自動抓取 |
+| E | 媒體類型 | Apify 自動（圖片/影片/純文字） |
 | F | 瀏覽數 | 手動輸入 |
-| G | 愛心數 | 手動輸入 |
-| H | 留言數 | 手動輸入 |
+| G | 愛心數 | Apify 自動抓取 |
+| H | 留言數 | Apify 自動抓取 |
 | I | 轉發數 | 手動輸入 |
 | J | 分享數 | 手動輸入 |
 | K | 主題標籤 | Claude AI 自動 |
@@ -71,11 +74,7 @@ Google Sheet（14欄）
 ### 第二步：建立 Google Sheet
 
 1. 建立新的 Google 試算表
-2. 第一列填入以下 14 個欄位名稱：
-   ```
-   日期 | 連結 | 來源帳號 | 文案 | 媒體類型 | 瀏覽數 | 愛心數 | 留言數 | 轉發數 | 分享數 | 主題標籤 | 風格分類 | AI摘要 | 手動標籤
-   ```
-3. 從網址列複製 Sheet ID（網址中 `/d/` 和 `/edit` 之間的字串）
+2. 不需要手動建立欄位，第一次存入資料時會自動建立
 
 ### 第三步：取得 Claude API Key
 
@@ -83,21 +82,35 @@ Google Sheet（14欄）
 2. 點選左側 **API Keys** → **Create Key**
 3. 複製 `sk-ant-` 開頭的 Key
 
-### 第四步：建立 Google Apps Script
+### 第四步：取得 Apify Token
+
+1. 前往 [apify.com](https://apify.com) 註冊帳號
+2. 左側選單 → **Settings** → **API & Integrations**
+3. 複製 **Personal API token**
+
+### 第五步：建立 Google Apps Script
 
 1. 在 Google Sheet 點選上方選單「**擴充功能**」→「**Apps Script**」
 2. 刪除預設程式碼，貼入 `code.gs` 的完整內容
-3. 修改最上方三個變數：
+3. 存檔（Cmd+S）
 
-```javascript
-const TELEGRAM_TOKEN = '貼上你的 Telegram Token';
-const SHEET_ID = '貼上你的 Sheet ID';
-const CLAUDE_API_KEY = '貼上你的 Claude API Key';
-```
+### 第六步：初始化設定頁
 
-4. 存檔（Cmd+S）
+1. 選擇 `initSetupSheet` 函式後點「**執行**」
+2. 會自動建立「⚙️設定」分頁
+3. 填入以下設定：
 
-### 第五步：部署為網頁應用程式
+| Key | Value |
+|-----|-------|
+| TELEGRAM_TOKEN | 從 @BotFather 取得的 Token |
+| CLAUDE_API_KEY | 從 Anthropic 取得的 Key |
+| APIFY_TOKEN | 從 Apify 取得的 Token |
+| WEBAPP_URL | 部署後取得的網址（第七步填） |
+| ADMIN_CHAT_ID | 你的 Telegram Chat ID（第八步填） |
+| DATA_SHEET_NAME | 📊資料（預設，可自訂） |
+| ANALYSIS_LANGUAGE | 繁體中文（預設，可自訂） |
+
+### 第七步：部署為網頁應用程式
 
 1. 點選右上角「**部署**」→「**新增部署作業**」
 2. 點選齒輪圖示，選擇「**網頁應用程式**」
@@ -106,31 +119,27 @@ const CLAUDE_API_KEY = '貼上你的 Claude API Key';
    - 誰可以存取：**所有人**
 4. 點選「**部署**」，完成 Google 授權流程
 5. 複製產生的網址（格式：`https://script.google.com/macros/s/xxx/exec`）
+6. 貼入「⚙️設定」分頁的 `WEBAPP_URL` 欄位
 
-### 第六步：設定 Webhook
+### 第八步：設定 Webhook
 
 1. 回到 Apps Script 編輯器
-2. 找到 `setWebhook` 函式，將 `YOUR_WEBAPP_URL` 換成第五步複製的網址：
+2. 選擇 `setWebhook` 函式後點「**執行**」
+3. 下方 Log 出現 `"ok":true` 即設定成功
 
-```javascript
-function setWebhook() {
-  const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=你的部署網址`;
-  Logger.log(UrlFetchApp.fetch(url).getContentText());
-}
-```
+### 第九步：取得 ADMIN_CHAT_ID（健康檢查用）
 
-3. 存檔，選擇 `setWebhook` 函式後點「**執行**」
-4. 下方 Log 出現 `"ok":true` 即設定成功
+1. 對你的 Bot 發送任意訊息
+2. 在 Apps Script 選擇 `getMyCharId` 函式後點「**執行**」
+3. 在 Log 找到 `"id": 數字`，複製那個數字
+4. 填入「⚙️設定」分頁的 `ADMIN_CHAT_ID` 欄位
 
-### 第七步：驗證
+### 第十步：設定每日健康檢查
 
-在瀏覽器開啟以下網址確認 Webhook 正常：
-
-```
-https://api.telegram.org/bot{你的TOKEN}/getWebhookInfo
-```
-
-回傳結果中 `url` 有值且沒有 `last_error_message` 即成功。
+1. Apps Script 左側點「**觸發條件**」（時鐘圖示）
+2. 右下角「**新增觸發條件**」
+3. 函式選 `dailyHealthCheck`，時間選每天早上 9 點
+4. 儲存
 
 ---
 
@@ -141,30 +150,42 @@ https://api.telegram.org/bot{你的TOKEN}/getWebhookInfo
 ```
 https://www.threads.com/@username/post/xxxxx
 職涯 AI工具
-33000 928 25 78 662
+78 662
 ```
 
 | 行 | 說明 | 必填 |
 |----|------|------|
-| 第一行 | Threads 連結（可在後面加關鍵字） | 必填 |
+| 第一行 | Threads 連結 | 必填 |
 | 第二行 | 手動標籤關鍵字 | 選填 |
-| 第三行 | 5 個數字：瀏覽 愛心 留言 轉發 分享 | 選填 |
+| 第三行 | 2 個數字：轉發 分享 | 選填 |
 
-Bot 回覆確認後，資料即寫入 Google Sheet，並由 Claude 自動補上 AI 分析欄位。
+愛心數和留言數由 Apify 自動抓取，不需手動輸入。
+
+---
+
+## 測試 Apify 連線
+
+若 Bot 無法抓取文案，在 Apps Script 執行 `testApify()` 函式，查看 Log 確認 Apify 是否正常運作。
 
 ---
 
 ## 批次補分析舊資料
 
-若有舊資料沒有 AI 分析，可在 Apps Script 選擇 `analyzeAllRows` 函式後點「**執行**」，會自動補齊所有空白的主題標籤、風格分類、AI摘要欄位。
+若有舊資料沒有 AI 分析，在 Apps Script 選擇 `analyzeAllRows` 函式後點「**執行**」，會自動補齊所有空白的主題標籤、風格分類、AI摘要欄位。
 
 ---
 
 ## 已知限制
 
-- 其他帳號的數據（瀏覽數、愛心數等）無法自動抓取，需手動輸入
-- 文案自動抓取成功率約 70-80%，依 Threads 頁面結構而定
-- 影片與圖片張數無法自動判斷，只能識別媒體類型
+- 轉發數和分享數無法自動抓取，需手動輸入
+- 圖片/影片張數無法精確判斷，只能識別有無媒體
+- 文案抓取依賴 Apify，若 Apify 額度用盡會暫停自動抓取
+
+---
+
+## 更新設定不需重新部署
+
+改 Token / API Key / 任何設定：只需修改 Google Sheet 的「⚙️設定」分頁，**不需要重新部署**。
 
 ---
 
