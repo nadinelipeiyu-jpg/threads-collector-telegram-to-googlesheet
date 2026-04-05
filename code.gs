@@ -76,17 +76,53 @@ function getDataSheet_() {
   const ss = getSpreadsheet_();
   const name = config.DATA_SHEET_NAME || DEFAULT_CONFIG.DATA_SHEET_NAME;
 
+  const headers = [
+    '時間', '連結', '帳號', '手動標籤', '文案', '媒體類型',
+    '瀏覽', '愛心', '留言', '轉發', '分享',
+    '主題標籤', '風格分類', 'AI摘要',
+    '抓取狀態', '重抓次數', '最後重抓時間', '備註'
+  ];
+
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
-    sheet.appendRow([
-      '時間', '連結', '帳號', '手動標籤', '文案', '媒體類型',
-      '瀏覽', '愛心', '留言', '轉發', '分享',
-      '主題標籤', '風格分類', 'AI摘要',
-      '抓取狀態', '重試次數', '最後重試時間', '備註'
-    ]);
   }
+
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  // 情況1：整張表是空的
+  if (lastRow === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return sheet;
+  }
+
+  // 情況2：檢查第一列是否為正確表頭
+  const currentHeaders = sheet.getRange(1, 1, 1, Math.max(headers.length, lastColumn)).getValues()[0]
+    .slice(0, headers.length)
+    .map(v => String(v || '').trim());
+
+  const headerMatched = headers.every((h, i) => currentHeaders[i] === h);
+
+  if (!headerMatched) {
+    const firstRowIsEmpty = currentHeaders.every(v => v === '');
+    if (firstRowIsEmpty) {
+      // 第一列完全空白 → 直接補上
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    } else {
+      // 第一列有內容但不是表頭 → 插入新列再放表頭，避免蓋掉資料
+      sheet.insertRows(1, 1);
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+  }
+
   return sheet;
+}
+
+// 手動執行一次，修復現有工作表的表頭
+function fixDataSheetHeaders() {
+  const sheet = getDataSheet_();
+  Logger.log('表頭檢查 / 修復完成：' + sheet.getName());
 }
 
 function nowString_() {
