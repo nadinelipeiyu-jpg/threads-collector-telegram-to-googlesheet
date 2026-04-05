@@ -1,200 +1,187 @@
-# Threads Collector v3
+# Threads 收藏機器人 v5
 
-用 Telegram Bot 收藏 Threads 好文，自動存入 Google Sheet，並由 Claude AI 自動分析分類。
+用 Telegram Bot 收藏 Threads 貼文，自動透過 Apify 抓取內容、Claude AI 分析標籤與摘要，寫入 Google Sheet。
+
+**架構：Telegram Bot → Google Apps Script（輪詢）→ Apify → Claude → Google Sheet**
+
+> ⚠️ v5 已棄用 Webhook，改為 Time-based Trigger 輪詢，解決 Google Apps Script 的 302 轉址問題。
 
 ---
 
 ## 功能
 
 - 傳 Threads 連結給 Bot → 自動存入 Google Sheet
-- **Apify 自動抓取**：文案、來源帳號、媒體類型、愛心數、留言數
-- Claude AI 自動分析：主題標籤、風格分類、AI摘要
-- 支援手動附加關鍵字和轉發/分享數據
-- **設定頁架構**：改 Token/Key 只需改 Google Sheet，不需動程式碼
-- **每日健康檢查**：Bot 掛掉時自動通知
+- Apify 抓取貼文文案、瀏覽、愛心、留言、轉發數據
+- Claude AI 分析主題標籤、內容風格、一句話摘要
+- 支援手動補標籤、手動輸入數字
+- 抓不到文案時，傳「重試」可重新抓取
+- 每 1～5 分鐘自動輪詢一次
 
 ---
 
-## 系統架構
+## Sheet 欄位順序
 
-```
-iPhone Telegram App
-    ↓ 傳連結（可附關鍵字和數據）
-Telegram Bot
-    ↓ Webhook
-Google Apps Script（免費雲端）
-    ↓ 呼叫 Apify 抓取文案 + 互動數
-    ↓ 呼叫 Claude API 分析
-Google Sheet（14欄）
-```
-
----
-
-## 準備事項
-
-| 項目 | 說明 | 費用 |
-|------|------|------|
-| Telegram 帳號 | 傳訊息的介面 | 免費 |
-| Google 帳號 | Google Sheet + Apps Script | 免費 |
-| Claude API Key | AI 分析用 | 有免費額度 |
-| Apify Token | 自動抓取 Threads 文案 | 免費額度每月 $5 |
+| 欄位 | 說明 |
+|------|------|
+| 時間 | 存入時間 |
+| 連結 | Threads URL |
+| 帳號 | @username |
+| 手動標籤 | 自己填的標籤 |
+| 文案 | 貼文內容（Apify 抓取）|
+| 媒體類型 | 圖片/影片/純文字 |
+| 瀏覽 | 瀏覽數 |
+| 愛心 | 愛心數 |
+| 留言 | 留言數 |
+| 轉發 | 轉發數 |
+| 分享 | 引用數 |
+| 主題標籤 | Claude 分析 |
+| 風格分類 | Claude 分析 |
+| AI摘要 | Claude 分析 |
 
 ---
 
-## Google Sheet 欄位
+## 需要的 API
 
-| 欄 | 名稱 | 來源 |
-|----|------|------|
-| A | 時間 | 自動 |
-| B | 連結 | 自動（已去除追蹤參數） |
-| C | 帳號 | 自動（從 URL 解析） |
-| D | 文案 | Apify 自動抓取 |
-| E | 媒體類型 | Apify 自動（圖片/影片/純文字） |
-| F | 瀏覽數 | 手動輸入 |
-| G | 愛心數 | Apify 自動抓取 |
-| H | 留言數 | Apify 自動抓取 |
-| I | 轉發數 | 手動輸入 |
-| J | 分享數 | 手動輸入 |
-| K | 主題標籤 | Claude AI 自動 |
-| L | 風格分類 | Claude AI 自動 |
-| M | AI摘要 | Claude AI 自動 |
-| N | 手動標籤 | 使用者輸入 |
+| 服務 | 用途 | 取得方式 |
+|------|------|----------|
+| Telegram Bot Token | 接收訊息 | [@BotFather](https://t.me/BotFather) |
+| Claude API Key | AI 分析 | [console.anthropic.com](https://console.anthropic.com) |
+| Apify Token | 抓取 Threads 內容 | [apify.com](https://apify.com) |
 
 ---
 
 ## 安裝步驟
 
-### 第一步：建立 Telegram Bot
+### 1. 建立 Google Apps Script 專案
 
-1. 打開 Telegram，搜尋 **@BotFather**
-2. 發送 `/newbot`
-3. 輸入 Bot 名稱和 username（username 需以 `bot` 結尾）
-4. 複製取得的 Token（格式：`123456789:AAFxxxxx`）
+前往 [script.google.com](https://script.google.com)，新增專案，將 `code.gs` 全部貼入。
 
-### 第二步：建立 Google Sheet
+### 2. 初始化 Config 工作表
 
-1. 建立新的 Google 試算表
-2. 不需要手動建立欄位，第一次存入資料時會自動建立
+執行：
+```
+initConfigSheet()
+```
 
-### 第三步：取得 Claude API Key
+### 3. 填入 Config 設定值
 
-1. 前往 [console.anthropic.com](https://console.anthropic.com)
-2. 點選左側 **API Keys** → **Create Key**
-3. 複製 `sk-ant-` 開頭的 Key
+在 Google Sheet 的 `Config` 工作表填入：
 
-### 第四步：取得 Apify Token
-
-1. 前往 [apify.com](https://apify.com) 註冊帳號
-2. 左側選單 → **Settings** → **API & Integrations**
-3. 複製 **Personal API token**
-
-### 第五步：建立 Google Apps Script
-
-1. 在 Google Sheet 點選上方選單「**擴充功能**」→「**Apps Script**」
-2. 刪除預設程式碼，貼入 `code.gs` 的完整內容
-3. 存檔（Cmd+S）
-
-### 第六步：初始化設定頁
-
-1. 選擇 `initSetupSheet` 函式後點「**執行**」
-2. 會自動建立「⚙️設定」分頁
-3. 填入以下設定：
-
-| Key | Value |
+| KEY | VALUE |
 |-----|-------|
-| TELEGRAM_TOKEN | 從 @BotFather 取得的 Token |
-| CLAUDE_API_KEY | 從 Anthropic 取得的 Key |
-| APIFY_TOKEN | 從 Apify 取得的 Token |
-| WEBAPP_URL | 部署後取得的網址（第七步填） |
-| ADMIN_CHAT_ID | 你的 Telegram Chat ID（第八步填） |
-| DATA_SHEET_NAME | 📊資料（預設，可自訂） |
-| ANALYSIS_LANGUAGE | 繁體中文（預設，可自訂） |
+| TG_TOKEN | Telegram Bot Token |
+| CLAUDE_API_KEY | Claude API Key |
+| APIFY_TOKEN | Apify Token |
+| ADMIN_CHAT_ID | 你的 Telegram Chat ID（用 getMyChatId() 取得）|
+| SHEET_ID | Google Sheet ID（可空白，空白則用當前試算表）|
+| DATA_SHEET_NAME | Threads收藏 |
+| ANALYSIS_LANGUAGE | 繁體中文 |
+| CLAUDE_MODEL | claude-haiku-4-5-20251001 |
 
-### 第七步：部署為網頁應用程式
+### 4. 測試各項功能
 
-1. 點選右上角「**部署**」→「**新增部署作業**」
-2. 點選齒輪圖示，選擇「**網頁應用程式**」
-3. 設定：
-   - 執行身分：**我**
-   - 誰可以存取：**所有人**
-4. 點選「**部署**」，完成 Google 授權流程
-5. 複製產生的網址（格式：`https://script.google.com/macros/s/xxx/exec`）
-6. 貼入「⚙️設定」分頁的 `WEBAPP_URL` 欄位
+依序執行：
 
-### 第八步：設定 Webhook
+```
+testSendMessage()   → Bot 是否能傳訊息
+testApify()         → Apify 是否能抓資料
+testClaude()        → Claude 是否能分析
+```
 
-1. 回到 Apps Script 編輯器
-2. 選擇 `setWebhook` 函式後點「**執行**」
-3. 下方 Log 出現 `"ok":true` 即設定成功
+### 5. 執行一次主流程
 
-### 第九步：取得 ADMIN_CHAT_ID（健康檢查用）
+```
+pollTelegramAndProcess()
+```
 
-1. 對你的 Bot 發送任意訊息
-2. 在 Apps Script 選擇 `getMyCharId` 函式後點「**執行**」
-3. 在 Log 找到 `"id": 數字`，複製那個數字
-4. 填入「⚙️設定」分頁的 `ADMIN_CHAT_ID` 欄位
+確認正常後，建立自動觸發器：
 
-### 第十步：設定每日健康檢查
-
-1. Apps Script 左側點「**觸發條件**」（時鐘圖示）
-2. 右下角「**新增觸發條件**」
-3. 函式選 `dailyHealthCheck`，時間選每天早上 9 點
-4. 儲存
+```
+createPollingTriggerEvery1Min()   // 每 1 分鐘
+// 或
+createPollingTriggerEvery5Min()   // 每 5 分鐘
+```
 
 ---
 
 ## 使用方式
 
-打開 Telegram，找到你建立的 Bot，傳送以下格式：
+### 傳送格式
 
+**只傳連結：**
 ```
-https://www.threads.com/@username/post/xxxxx
-職涯 AI工具
-78 662
+https://www.threads.net/@username/post/xxxxx
 ```
 
-| 行 | 說明 | 必填 |
-|----|------|------|
-| 第一行 | Threads 連結 | 必填 |
-| 第二行 | 手動標籤關鍵字 | 選填 |
-| 第三行 | 2 個數字：轉發 分享 | 選填 |
+**連結 + 手動標籤：**
+```
+https://www.threads.net/@username/post/xxxxx
+行銷,社群,KOL
+```
 
-愛心數和留言數由 Apify 自動抓取，不需手動輸入。
+**連結 + 手動數字（瀏覽 愛心 留言 轉發 分享）：**
+```
+https://www.threads.net/@username/post/xxxxx
+12000 890 45 23 10
+```
 
----
+**連結 + 標籤 + 數字：**
+```
+https://www.threads.net/@username/post/xxxxx
+行銷,社群
+12000 890 45 23 10
+```
 
-## 測試 Apify 連線
+### 特殊指令
 
-若 Bot 無法抓取文案，在 Apps Script 執行 `testApify()` 函式，查看 Log 確認 Apify 是否正常運作。
-
----
-
-## 批次補分析舊資料
-
-若有舊資料沒有 AI 分析，在 Apps Script 選擇 `analyzeAllRows` 函式後點「**執行**」，會自動補齊所有空白的主題標籤、風格分類、AI摘要欄位。
-
----
-
-## 已知限制
-
-- 轉發數和分享數無法自動抓取，需手動輸入
-- 圖片/影片張數無法精確判斷，只能識別有無媒體
-- 文案抓取依賴 Apify，若 Apify 額度用盡會暫停自動抓取
+| 指令 | 功能 |
+|------|------|
+| `重試` 或 `retry` | 重新抓取最近一筆空白文案 |
 
 ---
 
-## 更新設定不需重新部署
+## 函式說明
 
-改 Token / API Key / 任何設定：只需修改 Google Sheet 的「⚙️設定」分頁，**不需要重新部署**。
+| 函式 | 說明 |
+|------|------|
+| `pollTelegramAndProcess()` | 主流程，輪詢並處理新訊息 |
+| `initConfigSheet()` | 初始化 Config 工作表 |
+| `testSendMessage()` | 測試 Telegram 傳訊 |
+| `testApify()` | 測試 Apify 抓取 |
+| `testClaude()` | 測試 Claude 分析 |
+| `getMyChatId()` | 取得自己的 Chat ID |
+| `analyzeAllRows()` | 批次補分析所有空白 AI 欄位 |
+| `retryLastEmptyCaptionRow()` | 重試最近一筆空白文案 |
+| `retryEmptyCaptionsBatch()` | 批次補齊所有空白文案 |
+| `createPollingTriggerEvery1Min()` | 建立每 1 分鐘觸發器 |
+| `createPollingTriggerEvery5Min()` | 建立每 5 分鐘觸發器 |
+| `createRetryTrigger()` | 建立每 10 分鐘自動補齊觸發器 |
+| `deleteWebhookNow()` | 刪除舊 Webhook（如果有設過）|
+| `deleteAllProjectTriggers()` | 刪除所有觸發器 |
+| `dailyHealthCheck()` | 每日健康通知 |
 
 ---
 
-## 如何作為 Claude Code Skill 使用
+## 常見問題
 
-將 `threads-collector.md` 複製到 `~/.claude/commands/` 目錄，即可在 Claude Code 中使用 `/threads-collector` 呼叫完整設定說明。
+**Q: 文案抓不到怎麼辦？**  
+傳「重試」給 Bot，會自動重抓最近一筆空白文案。或執行 `retryEmptyCaptionsBatch()` 批次補齊。
+
+**Q: 為什麼用輪詢而不用 Webhook？**  
+Google Apps Script 的 Web App 在外部呼叫時會返回 302 轉址，Telegram Webhook 不接受，導致永遠無法正常觸發。改用輪詢（Time-based Trigger）可完全避開這個問題。
+
+**Q: 觸發器最快多久一次？**  
+Google Apps Script 最快支援每 1 分鐘觸發一次。
+
+**Q: Apify 用哪個 Actor？**  
+`7xFgGDhba8W5ZvOke`（Threads Scraper）。
 
 ---
 
-## License
+## 版本紀錄
 
-MIT — 自由使用與修改，歡迎 PR 改進。
+| 版本 | 說明 |
+|------|------|
+| v5 | 改為輪詢架構，棄用 Webhook，新增重試指令、批次補齊機制 |
+| v4 | Webhook 版，修正 Config key 名稱、強化錯誤處理 |
+| v3 | 初始 Webhook 版本 |
